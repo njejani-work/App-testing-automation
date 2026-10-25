@@ -1,0 +1,26 @@
+import { ExtensionCore } from '@appium/base-driver';
+import type { AppiumLogger, Constraints, Driver, ExecuteMethodMap, MethodMap, NextPluginCallback, Plugin, PluginCommand, StringRecord } from '@appium/types';
+type BasePluginMapType = Plugin & Record<string, PluginCommand>;
+/**
+ * Base plugin class for Appium plugins.
+ * Subclasses should use type `import('@appium/types').MethodMap<SubclassName>` for
+ * `newMethodMap` and `ExecuteMethodMap<SubclassName>` for `executeMethodMap`.
+ */
+export declare class BasePlugin extends ExtensionCore implements Plugin {
+    static newMethodMap: MethodMap<BasePluginMapType>;
+    static executeMethodMap: ExecuteMethodMap<BasePluginMapType>;
+    name: string;
+    cliArgs: Record<string, unknown>;
+    /**
+     * @deprecated Use this.log instead of this.logger
+     */
+    logger: AppiumLogger;
+    constructor(name: string, cliArgs?: Record<string, unknown>, driverId?: string | null);
+    /**
+     * A convenience method for plugins that implement their own `executeMethodMap`.
+     * Pass through to the driver's execute method if the plugin does not handle the script.
+     */
+    executeMethod<C extends Constraints>(next: NextPluginCallback, driver: Driver<C>, script: string, protoArgs: readonly [StringRecord<unknown>] | readonly unknown[]): Promise<unknown>;
+}
+export default BasePlugin;
+//# sourceMappingURL=plugin.d.ts.map

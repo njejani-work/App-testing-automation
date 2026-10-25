@@ -1,0 +1,2 @@
+export type {CssParserAdapter, InternalCssSelector} from './types.js';
+export {cssSelectorParserAdapter} from './css-selector-parser.js';

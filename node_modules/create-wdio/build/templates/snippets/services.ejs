@@ -1,0 +1,91 @@
+services: [<%- answers.services.map((service) => {
+    if (service === 'electron') {
+        return /*js*/`'electron'`
+    } else if (service === 'devtools') {
+        return /*js*/`[
+        'devtools',
+        {
+            // Every option below is commented out, and uncommenting one as
+            // written keeps the default behaviour, so this block acts exactly
+            // like plain 'devtools' until you change a value.
+            // See https://webdriver.io/docs/devtools/wdio
+            // mode: 'live',                 // 'live' opens the dashboard; 'trace' writes a trace.zip instead
+            // port: 3000,                   // dashboard port; a free one is used if 3000 is taken
+            // hostname: 'localhost',
+            // captureAssertions: true,      // assertions become action rows
+            // screencast: { enabled: false }, // live-mode session video
+            // devtoolsCapabilities: {},     // overrides for the dashboard window (default: Chrome at 1600x1200)
+
+            // Trace mode only, i.e. mode: 'trace'
+            // traceFormat: 'zip',           // 'zip', or 'ndjson-directory' to skip the unzip step
+            // traceGranularity: 'session',  // 'session' | 'spec' | 'test'
+            // tracePolicy: 'on',            // 'on' | 'retain-on-failure' | 'retain-on-first-failure' | ...
+            // filmstrip: true,              // dense screencast recorded into the trace
+
+            // Per-test artifacts, attached inline to Allure by
+            // @wdio/allure-reporter. Both need traceGranularity: 'test';
+            // at a coarser granularity neither artifact is produced.
+            // screenshot: 'off',            // 'on' | 'only-on-failure'
+            // video: 'off',                 // a retention policy, as tracePolicy above
+
+            // Index of every artifact produced, for any reporter or CI job to
+            // read. Auto-enabled when @wdio/allure-reporter is in the config.
+            // emitArtifactsManifest: false
+        }
+    ]`
+    } else if (service === 'tauri') {
+        const providerMap = {
+            'Official tauri-driver (cross-platform, Cargo-installed)': 'official',
+            'CrabNebula tauri-driver (managed cloud / drop-in)': 'crabnebula',
+            'Embedded driver via tauri-plugin-wdio-webdriver crate': 'embedded',
+        }
+        const provider = providerMap[answers.rawAnswers.tauriDriverProvider] ?? 'official'
+        const binaryLine = answers.rawAnswers.tauriAppBinaryPath
+            ? `\n            appBinaryPath: ${JSON.stringify(answers.rawAnswers.tauriAppBinaryPath)},`
+            : ''
+        return /*js*/`[
+        'tauri',
+        {
+            driverProvider: '${provider}',${binaryLine}
+            // see https://webdriver.io/docs/desktop-testing/tauri/configuration for all options
+        }
+    ]`
+    } else if (service === 'tauri-plugin') {
+        return /*js*/`'tauri-plugin'`
+    } else if (service === 'dioxus') {
+        const providerMap = {
+            'Embedded in-process driver (recommended — no external driver, all platforms)': 'embedded',
+            'External driver via wdio-dioxus-driver (Windows only)': 'external',
+        }
+        const provider = providerMap[answers.rawAnswers.dioxusDriverProvider] ?? 'embedded'
+        return /*js*/`[
+        'dioxus',
+        {
+            driverProvider: '${provider}',
+            // see https://webdriver.io/docs/desktop-testing/dioxus/configuration for all options
+        }
+    ]`
+    } else if (service === 'ai') {
+        return /*js*/`[
+        'ai',
+        {
+            // "provider:model", e.g. 'anthropic:claude-sonnet-5-5' with @langchain/anthropic installed,
+            // or set WDIO_AI_MODEL. See https://webdriver.io/docs/ai-steps
+            model: process.env.WDIO_AI_MODEL
+        }
+    ]`
+    } else if (service === 'sauce' && answers.useSauceConnect) {
+        return /*js*/`[
+        'sauce',
+        {
+            sauceConnect: true,
+            sauceConnectOpts: {
+                // add Sauce Connect Options if needed
+                // see more at https://docs.saucelabs.com/dev/cli/sauce-connect-5/
+            }
+        }
+    ]`
+    }
+
+    return `'${service}'`
+}).join(', ') %>],

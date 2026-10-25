@@ -1,0 +1,38 @@
+/**
+ * Thrown when a CSS selector string cannot be parsed.
+ */
+export class InvalidSelectorError extends Error {
+  /**
+   * @param message - Human-readable parse failure description
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidSelectorError';
+  }
+}
+
+/**
+ * Thrown when a parsed CSS selector uses unsupported features or unknown attributes.
+ */
+export class UnsupportedSelectorError extends Error {
+  /**
+   * @param message - Human-readable unsupported-feature description
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsupportedSelectorError';
+  }
+}
+
+/**
+ * Thrown when strategy routing fails to select a registered emitter.
+ */
+export class UnresolvedStrategyError extends Error {
+  /**
+   * @param message - Human-readable strategy resolution failure description
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnresolvedStrategyError';
+  }
+}

@@ -1,0 +1,162 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { DisplayDaemon } from '../src/types.js'
+import { installStubOnPath } from './realprocess-helpers.js'
+
+/**
+ * Real-process coverage for WaylandDisplayServer, the bits mocks cannot prove: the
+ * startDaemon()/stop() lifecycle against a controllable `weston` stub on PATH, and the
+ * dnf install command `install()` runs through a real shell. POSIX-only, so skipped on Windows.
+ */
+vi.mock('@wdio/logger', () => ({
+    default: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() }),
+}))
+
+const { WaylandDisplayServer } = await import('../src/WaylandDisplayServer.js')
+
+const stubPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'wayland-daemon-stub.mjs')
+const exists = (p: string) => access(p).then(() => true, () => false)
+
+describe.skipIf(process.platform === 'win32')('WaylandDisplayServer (real process lifecycle)', () => {
+    let uninstall: () => Promise<void>
+    let daemon: DisplayDaemon | undefined
+
+    beforeAll(async () => {
+        uninstall = await installStubOnPath('weston', stubPath)
+    })
+
+    afterAll(() => uninstall?.())
+
+    afterEach(() => {
+        daemon?.stopSync() // ensure no stub processes are orphaned
+        daemon = undefined
+        delete process.env.WDIO_STUB_MODE
+    })
+
+    it('spawns the daemon, waits for its socket, exposes env, and stop() tears it down', async () => {
+        process.env.WDIO_STUB_MODE = 'ready'
+
+        daemon = await new WaylandDisplayServer().startDaemon({ width: 100, height: 100 })
+
+        expect(daemon.env.WAYLAND_DISPLAY).toBe('wayland-0')
+        expect(daemon.env.ELECTRON_OZONE_PLATFORM_HINT).toBe('wayland')
+        const runtimeDir = daemon.env.XDG_RUNTIME_DIR
+        expect(await exists(path.join(runtimeDir, daemon.env.WAYLAND_DISPLAY))).toBe(true)
+
+        await daemon.stop()
+        daemon = undefined
+
+        expect(await exists(runtimeDir)).toBe(false)
+    }, 15_000)
+
+    it('rejects with the captured stderr when the daemon crashes before the socket appears', async () => {
+        process.env.WDIO_STUB_MODE = 'crash'
+
+        await expect(new WaylandDisplayServer().startDaemon({ width: 100, height: 100 }))
+            .rejects.toThrow(/Weston process exited unexpectedly[\s\S]*simulated startup failure/)
+    }, 15_000)
+
+    it('escalates to SIGKILL when the daemon ignores SIGTERM', async () => {
+        const logDir = await mkdtemp(path.join(os.tmpdir(), 'wdio-wayland-signals-'))
+        const signalLog = path.join(logDir, 'signals.log')
+        process.env.WDIO_STUB_MODE = 'ignore-sigterm'
+        process.env.WDIO_STUB_SIGNAL_LOG = signalLog
+
+        try {
+            daemon = await new WaylandDisplayServer().startDaemon({ width: 100, height: 100 })
+            const runtimeDir = daemon.env.XDG_RUNTIME_DIR
+
+            const start = Date.now()
+            await daemon.stop()
+            const elapsed = Date.now() - start
+            daemon = undefined
+
+            // The stub received SIGTERM and swallowed it, so stop() had to wait out the
+            // ~1s grace period and then SIGKILL: the real escalation path.
+            expect(await readFile(signalLog, 'utf8').catch(() => '')).toBe('SIGTERM\n')
+            expect(elapsed).toBeGreaterThanOrEqual(900)
+            expect(await exists(runtimeDir)).toBe(false)
+        } finally {
+            delete process.env.WDIO_STUB_SIGNAL_LOG
+            await rm(logDir, { recursive: true, force: true })
+        }
+    }, 15_000)
+})
+
+describe.skipIf(process.platform === 'win32')('dnf install command (real shell)', () => {
+    const DNF = [
+        '#!/bin/sh',
+        'echo "dnf $*" >> "$LOG"',
+        'case "$*" in',
+        '    *"install weston") [ -n "$WESTON_IN_BASE" ] || [ -f "$STATE/epel" ] ;;',
+        '    *"install epel-release"*) : > "$STATE/epel" ;;',
+        'esac',
+    ].join('\n')
+    const RPM = '#!/bin/sh\necho "$RHEL"\n'
+    const CRB = '#!/bin/sh\necho "crb $*" >> "$LOG"\n'
+
+    async function runDnfInstall(env: { RHEL: string, WESTON_IN_BASE?: string }) {
+        const dir = await mkdtemp(path.join(os.tmpdir(), 'wdio-dnf-stub-'))
+        const previousPath = process.env.PATH
+        const previous = {
+            LOG: process.env.LOG,
+            STATE: process.env.STATE,
+            RHEL: process.env.RHEL,
+            WESTON_IN_BASE: process.env.WESTON_IN_BASE,
+        }
+        try {
+            for (const [name, script] of [['dnf', DNF], ['rpm', RPM], ['crb', CRB]]) {
+                await writeFile(path.join(dir, name), script, { mode: 0o755 })
+            }
+            const log = path.join(dir, 'calls.log')
+            await writeFile(log, '')
+            // PATH is only the stubs, so install() detects dnf and the host's dnf never runs.
+            process.env.PATH = dir
+            process.env.LOG = log
+            process.env.STATE = dir
+            process.env.WESTON_IN_BASE = ''
+            Object.assign(process.env, env)
+            const ok = await new WaylandDisplayServer().install()
+            return { ok, calls: (await readFile(log, 'utf8')).trim().split('\n') }
+        } finally {
+            if (previousPath === undefined) {
+                delete process.env.PATH
+            } else {
+                process.env.PATH = previousPath
+            }
+            for (const [key, value] of Object.entries(previous)) {
+                if (value === undefined) {
+                    delete process.env[key]
+                } else {
+                    process.env[key] = value
+                }
+            }
+            await rm(dir, { recursive: true, force: true })
+        }
+    }
+
+    it('installs Weston from the base repos when it is there', async () => {
+        expect(await runDnfInstall({ RHEL: '', WESTON_IN_BASE: '1' })).toEqual({
+            ok: true,
+            calls: ['dnf -y makecache', 'dnf -y install weston'],
+        })
+    })
+
+    it('enables EPEL and CRB on Enterprise Linux 10', async () => {
+        expect(await runDnfInstall({ RHEL: '10' })).toEqual({
+            ok: true,
+            calls: ['dnf -y makecache', 'dnf -y install weston', 'dnf -y install epel-release dnf-plugins-core', 'crb enable', 'dnf -y install weston'],
+        })
+    })
+
+    it.each([['older Enterprise Linux', '9'], ['Fedora', '']])('leaves the repos alone on %s', async (_, rhel) => {
+        const { ok, calls } = await runDnfInstall({ RHEL: rhel })
+
+        expect(ok).toBe(false)
+        expect(calls).toEqual(['dnf -y makecache', 'dnf -y install weston'])
+    })
+})

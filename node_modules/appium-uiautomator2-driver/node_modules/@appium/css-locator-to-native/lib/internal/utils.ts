@@ -1,0 +1,18 @@
+/**
+ * Test whether a value is considered empty for selector normalization.
+ *
+ * @param value - Value to inspect
+ * @returns `true` if the value is null, undefined, an empty string, or an empty array
+ */
+export function isEmpty(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  if (typeof value === 'string') {
+    return value.length === 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  return false;
+}

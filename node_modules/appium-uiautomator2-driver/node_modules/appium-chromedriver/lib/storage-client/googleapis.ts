@@ -1,0 +1,199 @@
+import path from 'node:path';
+
+import {util, logger} from '@appium/support';
+import {DOMParser} from '@xmldom/xmldom';
+import {asyncmap} from 'asyncbox';
+import {select as xpathSelect} from 'xpath';
+
+import {STORAGE_REQ_TIMEOUT_MS, GOOGLEAPIS_CDN, ARCH, CPU, APPLE_ARM_SUFFIXES} from '../constants.js';
+import type {AdditionalDriverDetails, ChromedriverDetails, ChromedriverDetailsMapping} from '../types.js';
+import {retrieveData} from '../utils.js';
+
+const log = logger.getLogger('ChromedriverGoogleapisStorageClient');
+const MAX_PARALLEL_DOWNLOADS = 5;
+
+/**
+ * Finds a child node in an XML node by name and/or text content
+ *
+ * @param parent - The parent XML node to search in
+ * @param childName - Optional child node name to match
+ * @param text - Optional text content to match
+ * @returns The matching child node or null if not found
+ */
+export function findChildNode(
+  parent: Node | Attr,
+  childName: string | null = null,
+  text: string | null = null,
+): Node | Attr | null {
+  if (!childName && !text) {
+    return null;
+  }
+  if (!parent.hasChildNodes()) {
+    return null;
+  }
+
+  for (let childNodeIdx = 0; childNodeIdx < parent.childNodes.length; childNodeIdx++) {
+    const childNode = parent.childNodes[childNodeIdx] as Element | Attr;
+    if (childName && !text && childName === childNode.localName) {
+      return childNode;
+    }
+    if (text) {
+      const childText = extractNodeText(childNode);
+      if (!childText) {
+        continue;
+      }
+      if (childName && childName === childNode.localName && text === childText) {
+        return childNode;
+      }
+      if (!childName && text === childText) {
+        return childNode;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Gets additional chromedriver details from chromedriver
+ * release notes
+ *
+ * @param content - Release notes of the corresponding chromedriver
+ * @returns AdditionalDriverDetails
+ */
+export function parseNotes(content: string): AdditionalDriverDetails {
+  const result: AdditionalDriverDetails = {};
+  const versionMatch = /^\s*[-]+ChromeDriver[\D]+([\d.]+)/im.exec(content);
+  if (versionMatch) {
+    result.version = versionMatch[1];
+  }
+  const minBrowserVersionMatch = /^\s*Supports Chrome[\D]+(\d+)/im.exec(content);
+  if (minBrowserVersionMatch) {
+    result.minBrowserVersion = minBrowserVersionMatch[1];
+  }
+  return result;
+}
+
+/**
+ * Parses chromedriver storage XML and returns
+ * the parsed results
+ *
+ * @param xml - The chromedriver storage XML
+ * @param shouldParseNotes [true] - If set to `true`
+ * then additional drivers information is going to be parsed
+ * and assigned to `this.mapping`
+ * @returns Promise<ChromedriverDetailsMapping>
+ */
+export async function parseGoogleapiStorageXml(
+  xml: string,
+  shouldParseNotes = true,
+): Promise<ChromedriverDetailsMapping> {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  const driverNodes = xpathSelect(`//*[local-name(.)='Contents']`, doc as unknown as Node) as Array<Node | Attr>;
+  log.debug(`Parsed ${driverNodes.length} entries from storage XML`);
+  if (driverNodes.length === 0) {
+    throw new Error('Cannot retrieve any valid Chromedriver entries from the storage config');
+  }
+
+  const infoParsers: Array<() => Promise<void>> = [];
+  const mapping: ChromedriverDetailsMapping = {};
+  for (const driverNode of driverNodes) {
+    const k = extractNodeText(findChildNode(driverNode, 'Key'));
+    if (!String(k).includes('/chromedriver_')) {
+      continue;
+    }
+    const key = String(k);
+    const versionSegment = key.split('/')[0];
+    if (!versionSegment) {
+      continue;
+    }
+
+    const etag = extractNodeText(findChildNode(driverNode, 'ETag'));
+    if (!etag) {
+      log.debug(`The entry '${key}' does not contain the checksum. Skipping it`);
+      continue;
+    }
+
+    const filename = path.basename(key);
+    const osNameMatch = /_([a-z]+)/i.exec(filename);
+    if (!osNameMatch) {
+      log.debug(`The entry '${key}' does not contain valid OS name. Skipping it`);
+      continue;
+    }
+
+    const cdInfo: ChromedriverDetails = {
+      url: `${GOOGLEAPIS_CDN}/${key}`,
+      etag: etag.replace(/^"+|"+$/g, ''),
+      version: versionSegment,
+      minBrowserVersion: null,
+      os: {
+        name: osNameMatch[1],
+        arch: filename.includes(ARCH.X64) ? ARCH.X64 : ARCH.X86,
+        cpu: APPLE_ARM_SUFFIXES.some((suffix) => filename.includes(suffix)) ? CPU.ARM : CPU.INTEL,
+      },
+    };
+    mapping[key] = cdInfo;
+
+    const notesPath = `${cdInfo.version}/notes.txt`;
+    const isNotesPresent = !!driverNodes.reduce(
+      (acc, node) => Boolean(acc || findChildNode(node, 'Key', notesPath)),
+      false,
+    );
+    if (!isNotesPresent) {
+      cdInfo.minBrowserVersion = null;
+      if (shouldParseNotes) {
+        log.info(`The entry '${key}' does not contain any notes. Skipping it`);
+      }
+      continue;
+    } else if (!shouldParseNotes) {
+      continue;
+    }
+
+    infoParsers.push(async () => {
+      await retrieveAdditionalDriverInfo(key, `${GOOGLEAPIS_CDN}/${notesPath}`, cdInfo);
+    });
+  }
+  await asyncmap(
+    infoParsers,
+    async (parseInfo) => {
+      await parseInfo();
+    },
+    {concurrency: MAX_PARALLEL_DOWNLOADS},
+  );
+  log.info(`The total count of entries in the mapping: ${Object.keys(mapping).length}`);
+  return mapping;
+}
+
+/**
+ * Downloads chromedriver release notes and updates the driver info dictionary
+ *
+ * Mutates `infoDict` by setting `minBrowserVersion` if found in notes
+ * @param driverKey - Driver version plus archive name
+ * @param notesUrl - The URL of chromedriver notes
+ * @param infoDict - The dictionary containing driver info (will be mutated)
+ * @param timeout - Request timeout in milliseconds
+ */
+async function retrieveAdditionalDriverInfo(
+  driverKey: string,
+  notesUrl: string,
+  infoDict: ChromedriverDetails,
+  timeout = STORAGE_REQ_TIMEOUT_MS,
+): Promise<void> {
+  const notes = await retrieveData(
+    notesUrl,
+    {
+      'user-agent': 'appium',
+      accept: '*/*',
+    },
+    {timeout},
+  );
+  const {minBrowserVersion} = parseNotes(notes);
+  if (!minBrowserVersion) {
+    log.debug(`The driver '${driverKey}' does not contain valid release notes at ${notesUrl}. Skipping it`);
+    return;
+  }
+  infoDict.minBrowserVersion = minBrowserVersion;
+}
+
+function extractNodeText(node: Node | null | undefined): string | null {
+  return !node?.firstChild || !util.hasValue(node.firstChild.nodeValue) ? null : node.firstChild.nodeValue;
+}

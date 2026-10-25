@@ -1,0 +1,62 @@
+{
+  "name": "bplist-parser",
+  "version": "0.5.0",
+  "description": "Binary plist parser.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "npm run build && node smoke.cjs",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "bplist",
+    "plist",
+    "parser"
+  ],
+  "author": "Joe Ferner <joe.ferner@nearinfinity.com>",
+  "contributors": [
+    "Brett Zamir"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "10.0.x",
+    "@types/node": "26.4.x",
+    "esbuild": "0.28.x",
+    "eslint": "10.10.x",
+    "globals": "17.12.x",
+    "typescript": "6.0.x",
+    "typescript-eslint": "8.69.x",
+    "vitest": "5.0.x"
+  },
+  "homepage": "https://github.com/joeferner/node-bplist-parser",
+  "bugs": "https://github.com/joeferner/node-bplist-parser/issues",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joeferner/node-bplist-parser.git"
+  }
+}

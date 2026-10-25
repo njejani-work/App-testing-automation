@@ -1,0 +1,61 @@
+import type {LogEntry} from 'appium-adb';
+
+import {NATIVE_WIN} from '../context/helpers.js';
+import {CONTEXT_UPDATED_EVENT, LOG_ENTRY_ADDED_EVENT, CONTEXT_UPDATED_EVENT_OBSOLETE} from './constants.js';
+import type {BiDiLogLevel, LogEntryAddedEvent, ContextUpdatedEvent} from './types.js';
+
+function toContextUpdatedEvent(method: string, contextName: string): ContextUpdatedEvent {
+  return {
+    method,
+    params: {
+      name: contextName,
+      type: contextName === NATIVE_WIN ? 'NATIVE' : 'WEB',
+    },
+  };
+}
+
+export const makeContextUpdatedEvent = (contextName: string, domain: string) =>
+  toContextUpdatedEvent(CONTEXT_UPDATED_EVENT(domain), contextName);
+
+/**
+ * @deprecated Use {@link makeContextUpdatedEvent} instead
+ */
+export const makeObsoleteContextUpdatedEvent = (contextName: string) =>
+  toContextUpdatedEvent(CONTEXT_UPDATED_EVENT_OBSOLETE, contextName);
+
+/**
+ * Builds a BiDi `log.entryAdded` event from a logcat entry.
+ *
+ * @param entry - Raw log line from the device
+ * @param context - Active session context name
+ * @param type - Log entry classification passed through to the event
+ */
+export function makeLogEntryAddedEvent(entry: LogEntry, context: string, type: string): LogEntryAddedEvent {
+  return {
+    context,
+    method: LOG_ENTRY_ADDED_EVENT,
+    params: {
+      type,
+      level: adjustLogLevel(entry.level),
+      source: {
+        realm: '',
+        context,
+      },
+      text: entry.message,
+      timestamp: entry.timestamp,
+    },
+  };
+}
+
+function adjustLogLevel(originalLevel: string): BiDiLogLevel {
+  const originalLevelLc = originalLevel?.toLowerCase();
+  switch (originalLevelLc) {
+    case 'debug':
+    case 'info':
+    case 'warn':
+    case 'error':
+      return originalLevelLc as BiDiLogLevel;
+    default:
+      return 'info';
+  }
+}

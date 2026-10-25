@@ -1,0 +1,57 @@
+{
+  "name": "@appium/css-locator-to-native",
+  "version": "1.0.7",
+  "description": "Platform-agnostic CSS selector parsing and normalization for native locator transformation",
+  "homepage": "https://github.com/appium/css-locator-to-native#readme",
+  "bugs": {
+    "url": "https://github.com/appium/css-locator-to-native/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "Appium Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/appium/css-locator-to-native.git"
+  },
+  "files": [
+    "lib",
+    "build/lib",
+    "CHANGELOG.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./build/lib/index.d.ts",
+      "import": "./build/lib/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf build",
+    "dev": "tsc -p tsconfig.json --watch",
+    "format:check": "oxfmt -c oxfmt.config.mjs --check .",
+    "format": "oxfmt -c oxfmt.config.mjs .",
+    "lint:fix": "oxlint -c oxlint.config.mjs --fix .",
+    "lint": "oxlint -c oxlint.config.mjs .",
+    "prepare": "npm run build",
+    "rebuild": "npm run clean && npm run build",
+    "test": "node --test ./build/test/**/*.spec.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "css-selector-parser": "^3.3.0"
+  },
+  "devDependencies": {
+    "@appium/oxc-config": "^1.1.0",
+    "@appium/semantic-release-config": "^1.1.0",
+    "@appium/tsconfig": "^1.2.0",
+    "@appium/types": "^1.0.0-rc.1",
+    "@types/node": "^26.1.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0",
+    "npm": ">=10"
+  }
+}
