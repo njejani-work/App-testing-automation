@@ -1,12 +1,13 @@
 # App-testing-automation
 
-<br>
+<p>
+A JavaScript mobile test automation framework that uses WebdriverIO and Appium to test Sauce Labs’ My Demo App on an Android emulator. <br />
 
-Tools used:
-    appium                  : npm install -g appium@next
-    appium inspector        : (desktop app)
-    uiAutomator 2 driver    : appium driver install uiautomator2
-    webdriverIO             : npm init wdio@latest
-    Android Studio          : (desktop app)
+Tools used:<br />
+    appium                  : npm install -g appium@next,<br />
+    appium inspector        : (desktop app),<br />
+    uiAutomator 2 driver    : appium driver install uiautomator2,<br />
+    webdriverIO             : npm init wdio@latest,<br />
+    Android Studio          : (desktop app)<br />
 
-</br>
+</p>
