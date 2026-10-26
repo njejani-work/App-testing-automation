@@ -1,3 +1,14 @@
+import path from 'node:path';
+import fs from 'node:fs';
+
+// Build an absolute path to the APK, starting from the project root
+const APP_PATH = path.join(process.cwd(), 'apps', 'mda-2.3.0-27.apk');
+
+// Fail fast with a clear message if the file isn't there
+if (!fs.existsSync(APP_PATH)) {
+  throw new Error(`APK not found at: ${APP_PATH}`);
+}
+
 export const config = {
     //
     // ====================
@@ -24,6 +35,14 @@ export const config = {
     specs: [
         './test/specs/**/*.js'
     ],
+    suites: {
+    login: ['./test/specs/login.spec.js'],
+    
+    // cart:     ['./test/specs/cart.spec.js'],
+    // checkout: ['./test/specs/checkout.spec.js'],
+    },
+
+
     // Patterns to exclude.
     exclude: [
         // 'path/to/excluded/files'
@@ -53,10 +72,13 @@ export const config = {
     capabilities: [{
         // capabilities for local Appium web tests on an Android Emulator
         platformName: 'Android',
-        browserName: 'Chrome',
-        'appium:deviceName': 'Android GoogleAPI Emulator',
-        'appium:platformVersion': '12.0',
-        'appium:automationName': 'UiAutomator2'
+        // browserName: 'Chrome',
+        'appium:deviceName': 'emulator-5554',
+        'appium:platformVersion': '17.0',
+        'appium:automationName': 'UiAutomator2',
+        'appium:app': APP_PATH,
+        'appium:appPackage': 'com.saucelabs.mydemoapp.android',
+        'appium:newCommandTimeout': 240,
     }],
 
     //
@@ -93,7 +115,7 @@ export const config = {
     // baseUrl: 'http://localhost:8080',
     //
     // Default timeout for all waitFor* commands.
-    waitforTimeout: 10000,
+    waitforTimeout: 15000,
     //
     // Default timeout in milliseconds for request
     // if browser driver or grid doesn't send response
@@ -134,13 +156,27 @@ export const config = {
     // Test reporter for stdout.
     // The only one supported by default is 'dot'
     // see also: https://webdriver.io/docs/dot-reporter
-    reporters: ['spec'],
+    reporters: ['spec',['allure', { outputDir: 'allure-results', disableWebdriverStepsReporting: true }]],
+  
 
     // Options to be passed to Mocha.
     // See the full list at http://mochajs.org/
     mochaOpts: {
         ui: 'bdd',
-        timeout: 60000
+        timeout: 120000
+    },
+
+    afterTest: async function (test, context, { passed }) {
+        if (passed) return;
+
+        // 1. Screenshot for Allure (the Allure reporter attaches takeScreenshot results automatically)
+        await driver.takeScreenshot();
+
+        // 2. Screenshot saved as a file
+        fs.mkdirSync('screenshots', { recursive: true });
+        const time = new Date().toISOString().replace(/[:.]/g, '-');      // e.g. 2026-10-26T10-15-30-123Z
+        const name = test.title.replace(/[^a-z0-9]+/gi, '_').slice(0, 60);
+        await driver.saveScreenshot(`screenshots/${time}_${name}.png`);
     },
 
     //
