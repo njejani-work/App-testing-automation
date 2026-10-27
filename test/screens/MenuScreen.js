@@ -3,7 +3,7 @@ import BaseScreen from "./BaseScreen.js";
 class MenuScreen extends BaseScreen {
 
   get menuButton()   { return $('~View menu'); }                                        
-  get loginMenuItem(){ return $('android=new UiScrollable(new UiSelector().scrollable(true))' +
+  get loginMenuItem(){ return $('android=new UiScrollable(new UiSelector().resourceId("com.saucelabs.mydemoapp.android:id/menuRV"))' +
       '.scrollIntoView(new UiSelector().text("Log In"))') }
 
   async open() {
